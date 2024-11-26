@@ -11,3 +11,5 @@ export const generateChatCompletion = async (
   });
   return response.choices[0].message;
 };
+
+// Sends the function to the model on groq

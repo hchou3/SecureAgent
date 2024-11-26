@@ -26,7 +26,7 @@ const getChangesPerFile = async (payload: WebhookEventMap["pull_request"]) => {
       owner: payload.repository.owner.login,
       repo: payload.repository.name,
       pull_number: payload.pull_request.number,
-    });
+    }); //Get all the file changes from GitHub
     console.dir({ files }, { depth: null });
     return files;
   } catch (exc) {

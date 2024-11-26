@@ -26,6 +26,12 @@ export interface PRFile {
   current_contents?: string;
 }
 
+export interface importedFunctions {
+  filepath: string;
+  filename: string;
+  functions: Set<string>;
+}
+
 export interface BuilderResponse {
   comment: string;
   structuredComments: any[];

@@ -81,7 +81,9 @@ const filterFile = (file: PRFile) => {
   }
   const extension = splitFilename.pop()?.toLowerCase();
   if (extension && extensionsToIgnore.has(extension)) {
-    console.log(`Filtering out file with ignored extension: ${file.filename} (.${extension})`);
+    console.log(
+      `Filtering out file with ignored extension: ${file.filename} (.${extension})`
+    );
     return false;
   }
   return true;
@@ -478,6 +480,8 @@ const preprocessFile = async (
   const [oldContents, currentContents] = await Promise.all([
     getGitFile(octokit, payload, baseBranch, file.filename),
     getGitFile(octokit, payload, currentBranch, file.filename),
+
+    //MAYBE HANDLE CONTEXT RETRIEVAL HERE?
   ]);
 
   if (oldContents.content != null) {
@@ -514,10 +518,12 @@ export const processPullRequest = async (
   includeSuggestions = false
 ) => {
   console.dir({ files }, { depth: null });
-  const filteredFiles = files.filter((file) => filterFile(file));
+  const filteredFiles = files.filter((file) => filterFile(file)); //Process of filtering files begins here by getting all valid files (tsx, jsx, js, etc.)
   console.dir({ filteredFiles }, { depth: null });
   if (filteredFiles.length == 0) {
-    console.log("Nothing to comment on, all files were filtered out. The PR Agent does not support the following file types: pdf, png, jpg, jpeg, gif, mp4, mp3, md, json, env, toml, svg, package-lock.json, yarn.lock, .gitignore, package.json, tsconfig.json, poetry.lock, readme.md");
+    console.log(
+      "Nothing to comment on, all files were filtered out. The PR Agent does not support the following file types: pdf, png, jpg, jpeg, gif, mp4, mp3, md, json, env, toml, svg, package-lock.json, yarn.lock, .gitignore, package.json, tsconfig.json, poetry.lock, readme.md"
+    );
     return {
       review: null,
       suggestions: [],
@@ -531,6 +537,7 @@ export const processPullRequest = async (
   const owner = payload.repository.owner.login;
   const repoName = payload.repository.name;
   const curriedXMLResponseBuilder = curriedXmlResponseBuilder(owner, repoName);
+
   if (includeSuggestions) {
     const reviewComments = await reviewChangesRetry(filteredFiles, [
       {
@@ -569,11 +576,11 @@ export const processPullRequest = async (
     const [review] = await Promise.all([
       reviewChangesRetry(filteredFiles, [
         {
-          convoBuilder: getXMLReviewPrompt,
+          convoBuilder: getXMLReviewPrompt, // generate the XML of the prompt using REVIEW_PROMPT_DIFF in prompts.ts
           responseBuilder: curriedXMLResponseBuilder,
         },
         {
-          convoBuilder: getReviewPrompt,
+          convoBuilder: getReviewPrompt, // generate the Review prompt using REVIEW_PROMPT_DIFF in prompts.ts
           responseBuilder: basicResponseBuilder,
         },
       ]),
