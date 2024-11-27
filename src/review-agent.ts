@@ -529,6 +529,7 @@ export const processPullRequest = async (
       suggestions: [],
     };
   }
+  //for all the filtered files, preprocess the files from Github.
   await Promise.all(
     filteredFiles.map((file) => {
       return preprocessFile(octokit, payload, file);
@@ -536,6 +537,10 @@ export const processPullRequest = async (
   );
   const owner = payload.repository.owner.login;
   const repoName = payload.repository.name;
+
+  //!!Add functionality to apply context for functions that were imported within changed lines
+  //applyImportContext: Gather all imported functions on the PR and find them on the repo then add them to the list of files.
+
   const curriedXMLResponseBuilder = curriedXmlResponseBuilder(owner, repoName);
 
   if (includeSuggestions) {

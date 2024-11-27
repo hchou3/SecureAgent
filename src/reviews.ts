@@ -4,6 +4,8 @@ import {
   CodeSuggestion,
   Review,
   processGitFilepath,
+  importedFunctions,
+  PRFile,
 } from "./constants";
 import { Octokit } from "@octokit/rest";
 import { WebhookEventMap } from "@octokit/webhooks-definitions/schema";
@@ -119,7 +121,7 @@ export const getGitFile = async (
           "X-GitHub-Api-Version": "2022-11-28",
         },
       }
-    );
+    );//Collect the response and get information about the repo
     //@ts-ignore
     const decodedContent = Buffer.from(
       response.data.content,
@@ -138,7 +140,7 @@ export const getGitFile = async (
 
 export const getFileContents = async (
   octokit: Octokit,
-  payload: WebhookEventMap["issues"],
+  payload: WebhookEventMap["pull_request"],
   branch: BranchDetails,
   filepath: string
 ) => {
@@ -163,6 +165,216 @@ export const commentIssue = async (
     issue_number: payload.issue.number,
     body: comment,
   });
+};
+
+const parseFileFromFilepath = (path: string) => {
+  const segments = path.split("/");
+  return segments[segments.length - 1];
+};
+
+// Helper to parse specific named functions from file content
+const parseNamedFunctions = (
+  content: string,
+  functionNames: string[]
+): Set<string> => {
+  const functions = new Set<string>();
+  const exportRegex = /export\s+(const|function|class|let|var)\s+(\w+)/g;
+  let match;
+
+  while ((match = exportRegex.exec(content)) !== null) {
+    const exportedName = match[2];
+    if (functionNames.includes(exportedName)) {
+      functions.add(exportedName);
+    }
+  }
+  return functions;
+};
+
+// Helper to parse all exported functions from file content
+const parseAllExportedFunctions = (content: string): Set<string> => {
+  const functions = new Set<string>();
+  const exportRegex = /export\s+(const|function|class|let|var)\s+(\w+)/g;
+  let match;
+
+  while ((match = exportRegex.exec(content)) !== null) {
+    functions.add(match[2]);
+  }
+  return functions;
+};
+
+// Helper to extract function names from import statement
+const extractFunctionNames = (importStatement: string): string[] => {
+  const match = importStatement.match(/{([^}]+)}/);
+  if (!match) return [];
+
+  return match[1].split(",").map((func) => func.trim().split(" as ")[0]); // Handle potential aliases
+};
+
+const findExternalFunctionFromRepo = async (
+  import_statement: string,
+  octokit: Octokit,
+  payload: WebhookEventMap["pull_request"]
+): Promise<importedFunctions> => {
+  const result: importedFunctions = {
+    filepath: "",
+    filename: "",
+    functions: new Set<string>(),
+  };
+
+  //Split the import statement into ["from {filepath}", {filepath}]
+  const pathMatch = import_statement.match(/from ['"]([^'"]+)['"]/);
+  if (!pathMatch) return null; //not an exported function import
+  const importPath = pathMatch[1];
+
+  //Check if the import statement is a package import
+  if (
+    !importPath.startsWith(".") &&
+    !importPath.startsWith("/") &&
+    !importPath.startsWith("@/")
+  )
+    return null;
+
+  const filepath = processGitFilepath(importPath); //extract {filepath}
+  result.filepath = filepath;
+  result.filename = parseFileFromFilepath(filepath); //extract {file in filepath}
+  result.functions = new Set<string>(); //Initialize functions Set
+
+
+    const file_contents = await getFileContents(
+      octokit,
+      payload,
+      branch,
+      filepath
+    );
+
+    if (!file_contents) {
+      console.log(`No content found for file: ${filepath}`);
+      return result;
+    }
+
+    if (import_statement.includes("{") && import_statement.includes("}")) {
+      
+    } else if (import_statement.includes("*")) {
+      
+    }
+  } catch (error) {
+    console.log(`Error fetching file ${filepath}:`, error);
+  }
+  return result;
+};
+
+const findRepoImport = (
+  importLines: string[],
+  functionCalls: string[]
+): string[] => {
+  const statements: string[] = [];
+  functionCalls.forEach((func) => {
+    for (const line of importLines) {
+      if (line.includes(func)) {
+        statements.push(line.trim());
+      }
+    }
+  });
+  return statements;
+};
+
+const fetchExternalFunctionFiles = async (
+  octokit: Octokit,
+  payload: WebhookEventMap["pull_request"],
+  externalFuncs: importedFunctions[]
+) => {
+  const branch: BranchDetails = {
+    name: payload.pull_request.base.ref,
+    sha: payload.pull_request.base.sha,
+    url: payload.pull_request.url,
+  };
+
+  const fileContents = await Promise.all(
+    externalFuncs.map(async (func) => {
+      const file = await getGitFile(octokit, payload, branch, func.filepath);
+      return {
+        ...func,
+        content: file.content,
+      };
+    })
+  );
+  return fileContents;
+};
+
+//Find the context for a single Hunk
+//Use case: For each hunk, applyImportContext()
+const applyImportContext = (
+  octokit: Octokit,
+  payload: WebhookEventMap["pull_request"],
+  file: PRFile
+): importedFunctions[] => {
+  const externalFunctions: importedFunctions[] = [];
+
+  try {
+    const response = await octokit.request(
+      "GET /repos/{owner}/{repo}/contents/{path}",
+      {
+        owner: payload.repository.owner.login,
+        repo: payload.repository.name,
+        path: filepath,
+        ref: branch.name, // specify the branch name here
+        headers: {
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+      }
+    );
+
+  // Parse the patch to get hunks
+  const patches = diff.parsePatch(file.patch);
+  patches.forEach((patch) => {
+    patch.hunks.forEach((hunk) => {
+      //find changed lines
+      const changedLines = hunk.lines
+        .filter((line) => line.startsWith("+") || line.startsWith("-"))
+        .map((line) => line.slice(1).trim()); // Remove +/- prefix
+
+      //find the direct and method function calls in the changed lines
+      const functionCalls = new Set<string>();
+      changedLines.forEach((line) => {
+        const directCalls = line.matchAll(/(\w+)\s*\(/g);
+        for (const match of directCalls) {
+          functionCalls.add(match[1]);
+        }
+
+        const methodCalls = line.matchAll(/(\w+)\.(\w+)\s*\(/g);
+        for (const match of methodCalls) {
+          functionCalls.add(`${match[1]}.${match[2]}`);
+        }
+      });
+
+      if (file.current_contents) {
+        //find all imported functions
+        const importLines = file.current_contents
+          .split("\n")
+          .filter((line) => line.trim().startsWith("import"));
+
+        //find all imported statements from the repo
+        const repo_imports = findRepoImport(
+          importLines,
+          Array.from(functionCalls)
+        );
+
+        //Identify external functions and push them to the output
+        repo_imports.forEach(async (import_statement) => {
+          externalFunctions.push(
+            await findExternalFunctionFromRepo(
+              import_statement,
+              octokit,
+              payload
+            )
+          );
+        });
+      } else {
+        console.log("No contents in this file!");
+      }
+    });
+  });
+  return externalFunctions;
 };
 
 export const createBranch = async (
