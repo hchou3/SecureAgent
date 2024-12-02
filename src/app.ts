@@ -22,6 +22,7 @@ const getChangesPerFile = async (payload: WebhookEventMap["pull_request"]) => {
     const octokit = await reviewApp.getInstallationOctokit(
       payload.installation.id
     );
+    //Equivalent of doing const files = response.data (response = listFiles call)
     const { data: files } = await octokit.rest.pulls.listFiles({
       owner: payload.repository.owner.login,
       repo: payload.repository.name,
@@ -53,8 +54,10 @@ async function handlePullRequestOpened({
       id: payload.repository.id,
       fullName: payload.repository.full_name,
       url: payload.repository.html_url,
-    });
+    }); //Use the payload info to pull information on changed files in PR
     const files = await getChangesPerFile(payload);
+    //Call processPullRequest to get the right file types,
+    //and then generate the suggestion comments
     const review: Review = await processPullRequest(
       octokit,
       payload,

@@ -7,9 +7,11 @@ import type {
   BuilderResponse,
   Builders,
   CodeSuggestion,
+  importedFunctions,
   PRFile,
   PRSuggestion,
 } from "./constants";
+import { getFileName } from "./constants";
 import { PRSuggestionImpl } from "./data/PRSuggestionImpl";
 import { generateChatCompletion } from "./llms/chat";
 import {
@@ -25,7 +27,7 @@ import {
   INLINE_FIX_FUNCTION,
   getInlineFixPrompt,
 } from "./prompts/inline-prompt";
-import { getGitFile } from "./reviews";
+import { getGitFile, applyImportContext } from "./reviews";
 
 export const reviewDiff = async (messages: ChatCompletionMessageParam[]) => {
   const message = await generateChatCompletion({
@@ -342,7 +344,9 @@ export const reviewChanges = async (
   responseBuilder: (responses: string[]) => Promise<BuilderResponse>
 ) => {
   const patchBuilder = buildPatchPrompt;
+  //Filter the non tsx files
   const filteredFiles = files.filter((file) => filterFile(file));
+  //
   filteredFiles.map((file) => {
     file.patchTokenLength = getTokenLength(patchBuilder(file));
   });
@@ -535,11 +539,19 @@ export const processPullRequest = async (
       return preprocessFile(octokit, payload, file);
     })
   );
+  //get a Set of all existing filenames
+  const pr_filenames = getFileName(filteredFiles);
   const owner = payload.repository.owner.login;
   const repoName = payload.repository.name;
 
   //!!Add functionality to apply context for functions that were imported within changed lines
   //applyImportContext: Gather all imported functions on the PR and find them on the repo then add them to the list of files.
+  const importContext: importedFunctions[] = [];
+  filteredFiles.forEach((file) => {
+    importContext.push(
+      applyImportContext(octokit, payload, file, pr_filenames)
+    );
+  });
 
   const curriedXMLResponseBuilder = curriedXmlResponseBuilder(owner, repoName);
 

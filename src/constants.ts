@@ -90,9 +90,28 @@ export const sleep = async (ms: number) => {
   return new Promise((resolve) => setTimeout(resolve, ms));
 };
 
-export const processGitFilepath = (filepath: string) => {
-  // Remove the leading '/' if it exists
-  return filepath.startsWith("/") ? filepath.slice(1) : filepath;
+export const getFileName = (files: PRFile[]): Set<string> => {
+  const filenames = new Set<string>();
+  files.forEach((file) => {
+    filenames.add(file.filename);
+  });
+  return filenames;
+};
+
+export const processGitFilepath = (filepath: string): string => {
+  let normalizedPath = filepath.replace(/^\.\//, "").replace(/^@\//, "").trim();
+  const parts = normalizedPath.split("/");
+  const stack: string[] = [];
+  for (const part of parts) {
+    if (part === "." || part === "") {
+      continue;
+    } else if (part === "..") {
+      stack.pop();
+    } else {
+      stack.push(part);
+    }
+  }
+  return stack.join("/").slice(0, -1);
 };
 
 export interface EnclosingContext {
