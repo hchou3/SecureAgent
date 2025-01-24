@@ -124,7 +124,7 @@ export const getGitFile = async (
           "X-GitHub-Api-Version": "2022-11-28",
         },
       }
-    ); //Collect the response and get information about the repo
+    );
     //@ts-ignore
     const decodedContent = Buffer.from(
       response.data.content,
@@ -204,9 +204,11 @@ const findExternalFunctionFromRepo = async (
   };
 
   //Split the import statement into ["from {filepath}", {filepath}]
-  //const pathMatch = import_statement.match(/from ['"]([^'"]+)['"]/);
-  //if (!pathMatch) return null; //not an exported function import
-  //const importPath = pathMatch[1];
+  const pathMatch = Array.from(import_statements)
+    .join("\n")
+    .match(/from ['"]([^'"]+)['"]/);
+  if (!pathMatch) return null; //not an exported function import
+  const importPath = pathMatch[1];
 
   const filepath = processGitFilepath(importPath); //extract {filepath}
   result.filepath = filepath;
@@ -266,10 +268,12 @@ export const applyImportContext = (
     filename: "",
     functions: functionCalls,
   };
+
   //find lines in the old contents with imports
   const importLines = file.old_contents
     .split("\n")
     .filter((line) => line.trim().startsWith("import"));
+
   //Parse the patch into PatchInfo Array, for each PatchInfo extract function calls from the hunk lines
   const patches: PatchInfo[] = diff.parsePatch(file.patch);
   patches.forEach((patch) => {
@@ -277,15 +281,16 @@ export const applyImportContext = (
       parseFunctions(hunk.lines, functionCalls);
     });
   });
+
   //Identify external functions and push them to the output
-  importLines.forEach(async (import_statement) => {
+  /***importLines.forEach(async (import_statement) => {
     await findExternalFunctionFromRepo(
       filenames,
       octokit,
       payload,
       externalFunctions.functions
     );
-  });
+  });**/
 
   return externalFunctions;
 };
